@@ -1,0 +1,23 @@
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace and coverage artifacts
+bin/
+dist/
+coverage/
+coverage.out
+
+# Logs and local diagnostics
+*.log
+logs/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

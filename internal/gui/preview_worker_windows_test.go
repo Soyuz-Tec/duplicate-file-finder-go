@@ -77,6 +77,19 @@ func TestCleanupPreviewArtifactRemovesOnlyOwnedTempDirectory(t *testing.T) {
 	}
 }
 
+func TestResolvedPreviewArtifactMatchesParentJunctionButRejectsTargetRedirect(t *testing.T) {
+	tempRoot := `D:\a\_temp`
+	target := `D:\a\_temp\twintidy-preview-123`
+	resolvedTempRoot := `D:\hostedtoolcache\runner-temp`
+	resolvedTarget := `D:\hostedtoolcache\runner-temp\twintidy-preview-123`
+	if !resolvedPreviewArtifactMatches(tempRoot, target, resolvedTempRoot, resolvedTarget) {
+		t.Fatal("parent-junction resolution was rejected")
+	}
+	if resolvedPreviewArtifactMatches(tempRoot, target, resolvedTempRoot, `D:\victim\data`) {
+		t.Fatal("redirected artifact target was accepted")
+	}
+}
+
 func TestCancelledComparisonPreviewCreatesNoArtifact(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

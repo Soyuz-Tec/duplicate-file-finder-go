@@ -338,15 +338,32 @@ func cleanupPreviewArtifact(dir string) {
 		_ = os.Remove(target)
 		return
 	}
-	resolved, err := filepath.EvalSymlinks(target)
+	resolvedTempRoot, err := filepath.EvalSymlinks(tempRoot)
 	if err != nil {
 		return
 	}
-	resolved, err = filepath.Abs(resolved)
-	if err != nil || !strings.EqualFold(filepath.Clean(resolved), filepath.Clean(target)) {
+	resolvedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return
+	}
+	resolvedTempRoot, err = filepath.Abs(resolvedTempRoot)
+	if err != nil {
+		return
+	}
+	resolvedTarget, err = filepath.Abs(resolvedTarget)
+	if err != nil || !resolvedPreviewArtifactMatches(tempRoot, target, resolvedTempRoot, resolvedTarget) {
 		_ = os.Remove(target)
 		return
 	}
 
 	_ = os.RemoveAll(target)
+}
+
+func resolvedPreviewArtifactMatches(tempRoot, target, resolvedTempRoot, resolvedTarget string) bool {
+	relative, err := filepath.Rel(tempRoot, target)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
+		return false
+	}
+	expectedResolvedTarget := filepath.Join(resolvedTempRoot, relative)
+	return strings.EqualFold(filepath.Clean(expectedResolvedTarget), filepath.Clean(resolvedTarget))
 }

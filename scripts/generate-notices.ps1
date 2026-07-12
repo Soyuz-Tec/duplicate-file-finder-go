@@ -18,6 +18,10 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 
 Push-Location $repoRoot
 try {
+    & go mod download
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to download the locked Go module set."
+    }
     $moduleLines = @(& go list -mod=readonly -m -f '{{if not .Main}}{{.Path}}|{{.Version}}|{{.Dir}}{{end}}' all)
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to enumerate Go modules."

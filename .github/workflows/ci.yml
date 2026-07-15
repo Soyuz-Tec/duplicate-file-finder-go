@@ -101,7 +101,7 @@ jobs:
       - name: Enforce coverage floor
         shell: pwsh
         run: |
-          $line = (go tool cover -func=coverage.out | Select-Object -Last 1)
+          $line = (go tool cover "-func=coverage.out" | Select-Object -Last 1)
           if ($line -notmatch '(\d+\.\d+)%') {
             throw "Total statement coverage was not reported."
           }

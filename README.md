@@ -58,12 +58,14 @@ Logs remain on the computer unless the user explicitly shares them. Review diagn
 
 Production targets are:
 
-| Operating system | Architecture | Artifact |
-|---|---:|---|
-| Windows | x64 / `amd64` | `TwinTidy-windows-amd64.zip` |
-| Windows | ARM64 | `TwinTidy-windows-arm64.zip` |
+| Operating system | Architecture | Portable | Per-user install |
+|---|---:|---|---|
+| Windows | x64 / `amd64` | `TwinTidy-<version>-windows-amd64.zip` | `TwinTidy-<version>-windows-amd64.msix` |
+| Windows | ARM64 | `TwinTidy-<version>-windows-arm64.zip` | `TwinTidy-<version>-windows-arm64.msix` |
 
 Windows `386` is not supported. Release binaries use `CGO_ENABLED=0`; the shipped application does not need Python, GCC, MSYS2, GTK, Electron, a browser server, or a background service.
+
+See [Install, update, and uninstall TwinTidy](docs/INSTALL.md) for architecture selection, checksum and signature verification, portable use, and MSIX lifecycle instructions.
 
 The scanner intentionally uses CPU and storage concurrency rather than requiring a GPU. Exact duplicate detection is generally storage-bound; future similarity analysis can add optional acceleration without weakening deterministic CPU fallback.
 
@@ -114,10 +116,14 @@ Build exact-commit portable packages and run the source, receipt, reproducibilit
 ./scripts/verify-release.ps1 -Version 0.1.0-beta.1
 ```
 
-Direct development builds remain available from a dirty working tree and are labeled with their source digest. Stable public artifacts require the signing, native x64/ARM64 smoke, checksum, receipt, and provenance gates described in [Release engineering](docs/RELEASE.md). An unsigned local build is a development artifact, not an official TwinTidy release.
+Direct development builds remain available from a dirty working tree and are labeled with their source digest. Official public artifacts require the signing, native x64/ARM64 smoke, MSIX lifecycle, checksum, receipt, and provenance gates described in [Release engineering](docs/RELEASE.md). An unsigned local build is a development artifact, not an official TwinTidy release.
 
 ## Development status
 
 TwinTidy is being hardened toward its first reviewed release. The current pre-release build supports scanning, exact-match verification, selection planning, and previews; cleanup is disabled and no stable release may enable it without the identity-safety evidence required by ADR 0005.
 
 Security or possible data-loss reports should be submitted through [GitHub private vulnerability reporting](https://github.com/Soyuz-Tec/duplicate-file-finder-go/security/advisories/new), not a public issue.
+
+## License
+
+TwinTidy is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Kayilan Inc.

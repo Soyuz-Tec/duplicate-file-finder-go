@@ -4,7 +4,9 @@
 param(
     [string]$Version = "dev",
 
-    [switch]$RunNativeSmoke
+    [switch]$RunNativeSmoke,
+
+    [string]$VerifiedOutputDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -35,6 +37,36 @@ function Remove-VerifiedTempDirectory {
     }
     if ([System.IO.Directory]::Exists($fullPath)) {
         [System.IO.Directory]::Delete($fullPath, $true)
+    }
+}
+
+function Copy-VerifiedReleaseFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$ExpectedSHA256
+    )
+
+    $input = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    try {
+        $actualSourceHash = Get-TwinTidyStreamSHA256 -Stream $input
+        if ($actualSourceHash -cne $ExpectedSHA256) {
+            throw "Verified release source '$Source' changed before export."
+        }
+        $output = [System.IO.File]::Open($Destination, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $input.Position = 0
+            $input.CopyTo($output)
+            $output.Flush($true)
+        } finally {
+            $output.Dispose()
+        }
+    } finally {
+        $input.Dispose()
+    }
+    $actualDestinationHash = Get-TwinTidyFileSHA256 -Path $Destination
+    if ($actualDestinationHash -cne $ExpectedSHA256) {
+        throw "Verified release export '$Destination' does not match '$ExpectedSHA256'."
     }
 }
 
@@ -129,8 +161,14 @@ function Assert-ExtractedResources {
     if ($version.OriginalFilename -ne "TwinTidy.exe") {
         throw "OriginalFilename for $Architecture is '$($version.OriginalFilename)', expected TwinTidy.exe."
     }
-    if ($version.FileDescription -ne "TwinTidy - Safe Duplicate File Cleaner") {
+    if ($version.FileDescription -ne "TwinTidy - Safe Duplicate File Review") {
         throw "Unexpected FileDescription for ${Architecture}: '$($version.FileDescription)'."
+    }
+    if ($version.CompanyName -ne "Kayilan Inc") {
+        throw "CompanyName for $Architecture is '$($version.CompanyName)', expected Kayilan Inc."
+    }
+    if ($version.LegalCopyright -ne "Copyright (c) 2026 Kayilan Inc") {
+        throw "Unexpected LegalCopyright for ${Architecture}: '$($version.LegalCopyright)'."
     }
     if ($version.FileVersion.Trim() -ne $ExpectedVersion.Canonical) {
         throw "FileVersion string for $Architecture is '$($version.FileVersion)', expected '$($ExpectedVersion.Canonical)'."
@@ -181,7 +219,7 @@ function Assert-PackageContents {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
     try {
         $actual = @($archive.Entries | ForEach-Object { $_.FullName } | Sort-Object)
-        $expected = @("THIRD_PARTY_NOTICES.txt", "TwinTidy.build-receipt.json", "TwinTidy.exe")
+        $expected = @("LICENSE", "THIRD_PARTY_NOTICES.txt", "TwinTidy.build-receipt.json", "TwinTidy.exe")
         if (($actual -join "|") -ne ($expected -join "|")) {
             throw "Unexpected portable package entries in $ArchivePath`: $($actual -join ', ')."
         }
@@ -277,6 +315,7 @@ try {
         $firstReceiptHashes = @{}
         $secondExecutableHashes = @{}
         $secondReceiptHashes = @{}
+        $firstReceiptDocuments = @{}
         foreach ($arch in @("amd64", "arm64")) {
             $firstResult = @($firstBuildResults | Where-Object { $_.Architecture -ceq $arch })
             $secondResult = @($secondBuildResults | Where-Object { $_.Architecture -ceq $arch })
@@ -313,6 +352,7 @@ try {
                 throw "Build receipt for $arch is not reproducible ($firstReceiptHash != $secondReceiptHash)."
             }
             $firstReceipt = ConvertFrom-TwinTidyJson -Json (Get-Content -LiteralPath $firstReceiptPath -Raw)
+            $firstReceiptDocuments[$arch] = $firstReceipt
             $firstBinding = Assert-TwinTidyBuildReceipt `
                 -Receipt $firstReceipt `
                 -ExpectedVersion $versionInfo.Canonical `
@@ -364,6 +404,7 @@ try {
             }
         }
 
+        $packageHashes = @{}
         foreach ($arch in @("amd64", "arm64")) {
             $trackedPath = Join-Path $repoRoot "cmd\twintidy\rsrc_windows_$arch.syso"
             $afterHash = (Get-FileHash -LiteralPath $trackedPath -Algorithm SHA256).Hash
@@ -397,6 +438,7 @@ try {
             if ($firstHash -ne $secondHash) {
                 throw "Portable $arch package is not reproducible ($firstHash != $secondHash)."
             }
+            $packageHashes[$arch] = $firstHash.ToLowerInvariant()
             Assert-PackageContents `
                 -ArchivePath $firstArchive `
                 -ExpectedExecutableSHA256 $firstExecutableHashes[$arch] `
@@ -419,6 +461,88 @@ try {
             Architecture = "checksums"
             ReproduciblePackage = $true
             SHA256 = $firstChecksumHash
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($VerifiedOutputDirectory)) {
+            $verifiedOutput = [System.IO.Path]::GetFullPath($VerifiedOutputDirectory)
+            if ([System.IO.Directory]::Exists($verifiedOutput)) {
+                if (@([System.IO.Directory]::EnumerateFileSystemEntries($verifiedOutput)).Count -ne 0) {
+                    throw "Verified output directory must be empty: $verifiedOutput"
+                }
+            } else {
+                [System.IO.Directory]::CreateDirectory($verifiedOutput) | Out-Null
+            }
+
+            $architectureReceipts = @()
+            foreach ($arch in @("amd64", "arm64")) {
+                $sourceDirectory = Join-Path $firstBuild "TwinTidy-$($versionInfo.Canonical)-windows-$arch"
+                $outputDirectory = Join-Path $verifiedOutput "TwinTidy-$($versionInfo.Canonical)-windows-$arch"
+                [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
+                Copy-VerifiedReleaseFile `
+                    -Source (Join-Path $sourceDirectory "TwinTidy.exe") `
+                    -Destination (Join-Path $outputDirectory "TwinTidy.exe") `
+                    -ExpectedSHA256 $firstExecutableHashes[$arch]
+                Copy-VerifiedReleaseFile `
+                    -Source (Join-Path $sourceDirectory "TwinTidy.build-receipt.json") `
+                    -Destination (Join-Path $outputDirectory "TwinTidy.build-receipt.json") `
+                    -ExpectedSHA256 $firstReceiptHashes[$arch]
+
+                $architectureReceipts += [ordered]@{
+                    architecture = $arch
+                    unsignedExecutable = [ordered]@{
+                        path = "TwinTidy-$($versionInfo.Canonical)-windows-$arch/TwinTidy.exe"
+                        size = ([System.IO.FileInfo]::new((Join-Path $outputDirectory "TwinTidy.exe"))).Length
+                        sha256 = $firstExecutableHashes[$arch]
+                    }
+                    buildReceipt = [ordered]@{
+                        path = "TwinTidy-$($versionInfo.Canonical)-windows-$arch/TwinTidy.build-receipt.json"
+                        sha256 = $firstReceiptHashes[$arch]
+                    }
+                    replicas = @(
+                        [ordered]@{
+                            ordinal = 1
+                            executableSHA256 = $firstExecutableHashes[$arch]
+                            buildReceiptSHA256 = $firstReceiptHashes[$arch]
+                            packageSHA256 = $packageHashes[$arch]
+                        },
+                        [ordered]@{
+                            ordinal = 2
+                            executableSHA256 = $secondExecutableHashes[$arch]
+                            buildReceiptSHA256 = $secondReceiptHashes[$arch]
+                            packageSHA256 = $packageHashes[$arch]
+                        }
+                    )
+                    reproducible = $true
+                }
+            }
+
+            $sourceReceipt = $firstReceiptDocuments["amd64"].source
+            $reproducibilityReceipt = [ordered]@{
+                schema = "twintidy.unsigned-reproducibility/v1"
+                product = "TwinTidy"
+                version = $versionInfo.Canonical
+                sourceDate = $sourceDate
+                source = [ordered]@{
+                    commit = $commit
+                    gitTree = $sourceIdentity.GitTree
+                    treeDigestAlgorithm = [string]$sourceReceipt.treeDigestAlgorithm
+                    treeSHA256 = [string]$sourceReceipt.treeSHA256
+                    fileCount = [int]$sourceReceipt.fileCount
+                }
+                architectures = $architectureReceipts
+            }
+            $reproducibilityPath = Join-Path $verifiedOutput "TwinTidy.unsigned-reproducibility.json"
+            [System.IO.File]::WriteAllText(
+                $reproducibilityPath,
+                (($reproducibilityReceipt | ConvertTo-Json -Depth 12) + "`n"),
+                [System.Text.UTF8Encoding]::new($false)
+            )
+            [pscustomobject]@{
+                Architecture = "all"
+                VerifiedOutput = $verifiedOutput
+                ReproducibilityReceiptPath = $reproducibilityPath
+                ReproducibilityReceiptSHA256 = Get-TwinTidyFileSHA256 -Path $reproducibilityPath
+            }
         }
     } finally {
         Remove-VerifiedTempDirectory -Path $tempDirectory

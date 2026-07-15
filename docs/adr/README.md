@@ -18,6 +18,7 @@ ADRs record material decisions that should not be rediscovered from code or chat
 | [0003](0003-amd64-arm64-resources.md) | Accepted | Support amd64 and ARM64 with generated architecture-specific resources |
 | [0004](0004-versioning-signing-release.md) | Accepted | Use SemVer, reproducible unsigned builds, protected signing, and immutable releases |
 | [0005](0005-disable-path-based-recycle.md) | Accepted | Disable path-based Windows recycling until the destructive sink is identity-bound |
+| [0006](0006-per-user-msix-distribution.md) | Accepted | Ship a protected, signed, per-user MSIX for x64 and ARM64 alongside portable packages |
 
 ## Creating an ADR
 

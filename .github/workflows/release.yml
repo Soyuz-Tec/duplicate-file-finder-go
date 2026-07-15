@@ -1,0 +1,654 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing protected annotated release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    name: Validate protected tag
+    runs-on: windows-2025
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      source_date: ${{ steps.release.outputs.source_date }}
+      msix_version: ${{ steps.release.outputs.msix_version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Validate annotated tag and default-branch ancestry
+        id: release
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $release = .\scripts\validate-release-tag.ps1 -Tag $env:RELEASE_TAG
+          "tag=$($release.Tag)" >> $env:GITHUB_OUTPUT
+          "version=$($release.Version)" >> $env:GITHUB_OUTPUT
+          "commit=$($release.Commit)" >> $env:GITHUB_OUTPUT
+          "source_date=$($release.SourceDate)" >> $env:GITHUB_OUTPUT
+          "msix_version=$($release.MSIXVersion)" >> $env:GITHUB_OUTPUT
+          "prerelease=$($release.Prerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+  reproduce-unsigned:
+    name: Reproduce unsigned release
+    needs: validate-tag
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=readonly
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.commit }}
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Rebuild twice and export verified unsigned inputs
+        id: reproduce
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "twintidy-verified-unsigned"
+          .\scripts\verify-release.ps1 -Version $env:RELEASE_VERSION -VerifiedOutputDirectory $output
+          "output=$output" >> $env:GITHUB_OUTPUT
+
+      - name: Upload digest-bound unsigned inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TwinTidy-${{ needs.validate-tag.outputs.version }}-verified-unsigned
+          path: ${{ steps.reproduce.outputs.output }}
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-and-package:
+    name: Sign and package release
+    needs:
+      - validate-tag
+      - reproduce-unsigned
+    runs-on: ${{ vars.TWINTIDY_SIGNING_RUNNER || 'windows-2025' }}
+    timeout-minutes: 45
+    environment: production-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=readonly
+      SIGNING_ADAPTER_PATH: ${{ vars.TWINTIDY_SIGNING_ADAPTER_PATH }}
+      SIGNING_ADAPTER_SHA256: ${{ vars.TWINTIDY_SIGNING_ADAPTER_SHA256 }}
+      SIGNER_SUBJECT: ${{ vars.TWINTIDY_SIGNER_SUBJECT }}
+      SIGNER_THUMBPRINT: ${{ vars.TWINTIDY_SIGNER_THUMBPRINT }}
+      SIGNER_VERIFICATION_MODE: ${{ vars.TWINTIDY_SIGNER_VERIFICATION_MODE }}
+      SIGNER_IDENTITY_EKU: ${{ vars.TWINTIDY_SIGNER_IDENTITY_EKU }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.commit }}
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download verified unsigned inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: TwinTidy-${{ needs.validate-tag.outputs.version }}-verified-unsigned
+          path: ${{ runner.temp }}/twintidy-verified-unsigned
+
+      - name: Verify protected signer configuration
+        id: signer
+        shell: pwsh
+        run: |
+          foreach ($name in @("SIGNING_ADAPTER_PATH", "SIGNING_ADAPTER_SHA256", "SIGNER_SUBJECT", "SIGNER_VERIFICATION_MODE")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Protected production-signing variable '$name' is not configured."
+            }
+          }
+          if ($env:SIGNER_VERIFICATION_MODE -ceq "fixed-certificate") {
+            if ($env:SIGNER_THUMBPRINT -notmatch '^[0-9a-fA-F]{64}$') {
+              throw "Fixed-certificate signing requires TWINTIDY_SIGNER_THUMBPRINT as the leaf certificate SHA-256."
+            }
+          } elseif ($env:SIGNER_VERIFICATION_MODE -ceq "artifact-signing") {
+            if ($env:SIGNER_IDENTITY_EKU -notmatch '^1\.3\.6\.1\.4\.1\.311\.97\.(?:[0-9]+\.)*[0-9]+$') {
+              throw "Artifact Signing requires the exact durable TWINTIDY_SIGNER_IDENTITY_EKU."
+            }
+          } else {
+            throw "TWINTIDY_SIGNER_VERIFICATION_MODE must be fixed-certificate or artifact-signing."
+          }
+          $adapter = $env:SIGNING_ADAPTER_PATH
+          if (-not [System.IO.Path]::IsPathRooted($adapter)) {
+            $adapter = Join-Path $env:GITHUB_WORKSPACE $adapter
+          }
+          $adapter = [System.IO.Path]::GetFullPath($adapter)
+          if (-not (Test-Path -LiteralPath $adapter -PathType Leaf)) {
+            throw "Configured signer adapter is missing: $adapter"
+          }
+          $actual = (Get-FileHash -LiteralPath $adapter -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:SIGNING_ADAPTER_SHA256.ToLowerInvariant()) {
+            throw "Signer adapter digest '$actual' does not match protected configuration."
+          }
+          "path=$adapter" >> $env:GITHUB_OUTPUT
+
+      - name: Sign executables and create final packages
+        id: package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          SOURCE_DATE: ${{ needs.validate-tag.outputs.source_date }}
+          SIGNING_ADAPTER: ${{ steps.signer.outputs.path }}
+        run: |
+          . .\scripts\TwinTidy.Release.ps1
+          $unsignedRoot = Join-Path $env:RUNNER_TEMP "twintidy-verified-unsigned"
+          $reproducibilityPath = Join-Path $unsignedRoot "TwinTidy.unsigned-reproducibility.json"
+          $reproducibility = Get-Content -LiteralPath $reproducibilityPath -Raw | ConvertFrom-Json
+          if ($reproducibility.schema -cne "twintidy.unsigned-reproducibility/v1" -or
+              $reproducibility.version -cne $env:RELEASE_VERSION -or
+              $reproducibility.source.commit -cne $env:RELEASE_COMMIT) {
+            throw "Unsigned reproducibility receipt does not match this release."
+          }
+          $unsignedHashes = @{}
+          $receiptHashes = @{}
+          foreach ($architecture in $reproducibility.architectures) {
+            $arch = [string]$architecture.architecture
+            if ($arch -notin @("amd64", "arm64") -or -not [bool]$architecture.reproducible) {
+              throw "Unsigned reproducibility receipt contains an invalid architecture record."
+            }
+            $unsignedHashes[$arch] = [string]$architecture.unsignedExecutable.sha256
+            $receiptHashes[$arch] = [string]$architecture.buildReceipt.sha256
+          }
+          if ($unsignedHashes.Count -ne 2 -or $receiptHashes.Count -ne 2) {
+            throw "Unsigned reproducibility receipt must bind amd64 and arm64."
+          }
+
+          $signedRoot = Join-Path $env:RUNNER_TEMP "twintidy-signed"
+          $signedResults = @(.\scripts\sign-release.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -Architecture all `
+            -InputDirectory $unsignedRoot `
+            -OutputDirectory $signedRoot `
+            -SourceDate $env:SOURCE_DATE `
+            -ExpectedCommit $env:RELEASE_COMMIT `
+            -ExpectedGitTree ([string]$reproducibility.source.gitTree) `
+            -ExpectedSourceTreeSHA256 ([string]$reproducibility.source.treeSHA256) `
+            -SignerAdapter $env:SIGNING_ADAPTER `
+            -ExpectedSignerSubject $env:SIGNER_SUBJECT `
+            -ExpectedSignerThumbprint $env:SIGNER_THUMBPRINT `
+            -SignerVerificationMode $env:SIGNER_VERIFICATION_MODE `
+            -ExpectedSignerIdentityEku $env:SIGNER_IDENTITY_EKU `
+            -ExpectedUnsignedExecutableSHA256 $unsignedHashes `
+            -ExpectedBuildReceiptSHA256 $receiptHashes)
+          $signedHashes = @{}
+          $signedProvenanceHashes = @{}
+          foreach ($result in $signedResults) {
+            $signedHashes[[string]$result.Architecture] = [string]$result.SignedExecutableSHA256
+            $signedProvenanceHashes[[string]$result.Architecture] = [string]$result.SignedProvenanceSHA256
+          }
+          if ($signedHashes.Count -ne 2 -or $signedProvenanceHashes.Count -ne 2) {
+            throw "Signing did not produce both release architectures."
+          }
+          $actualSignerCertificateSHA256 = @($signedResults | Select-Object -ExpandProperty SignerThumbprint -Unique | Sort-Object)
+          $actualSignerIdentityEku = @($signedResults | Select-Object -ExpandProperty SignerIdentityEku -Unique | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+
+          $portableRoot = Join-Path $env:RUNNER_TEMP "twintidy-portable-final"
+          $null = .\scripts\package-signed.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -Architecture all `
+            -InputDirectory $signedRoot `
+            -OutputDirectory $portableRoot `
+            -SourceDate $env:SOURCE_DATE `
+            -ExpectedSignerSubject $env:SIGNER_SUBJECT `
+            -ExpectedSignerThumbprint $env:SIGNER_THUMBPRINT `
+            -SignerVerificationMode $env:SIGNER_VERIFICATION_MODE `
+            -ExpectedSignerIdentityEku $env:SIGNER_IDENTITY_EKU `
+            -ExpectedUnsignedExecutableSHA256 $unsignedHashes `
+            -ExpectedBuildReceiptSHA256 $receiptHashes `
+            -ExpectedSignedExecutableSHA256 $signedHashes `
+            -ExpectedSignedProvenanceSHA256 $signedProvenanceHashes
+
+          $msixRoot = Join-Path $env:RUNNER_TEMP "twintidy-msix-final"
+          $unsignedMSIX = @(.\scripts\package-msix.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -Architecture all `
+            -InputDirectory $signedRoot `
+            -OutputDirectory $msixRoot `
+            -Publisher $env:SIGNER_SUBJECT `
+            -ExpectedSignerThumbprint $env:SIGNER_THUMBPRINT `
+            -SignerVerificationMode $env:SIGNER_VERIFICATION_MODE `
+            -ExpectedSignerIdentityEku $env:SIGNER_IDENTITY_EKU)
+          $msixResults = @($unsignedMSIX | Where-Object { $_.Architecture -in @("amd64", "arm64") })
+          if ($msixResults.Count -ne 2) {
+            throw "MSIX packaging did not produce both release architectures."
+          }
+          foreach ($msix in $msixResults) {
+            $unsignedPath = [System.IO.Path]::GetFullPath([string]$msix.Path)
+            $signedPath = $unsignedPath -replace '\.unsigned\.msix$', '.msix'
+            if ($signedPath -ceq $unsignedPath -or [System.IO.File]::Exists($signedPath)) {
+              throw "Refusing unsafe or existing signed MSIX output '$signedPath'."
+            }
+            $LASTEXITCODE = 0
+            & $env:SIGNING_ADAPTER -InputPath $unsignedPath -OutputPath $signedPath
+            if (-not $? -or $LASTEXITCODE -ne 0 -or -not [System.IO.File]::Exists($signedPath)) {
+              throw "Signer adapter failed to create signed MSIX for $($msix.Architecture)."
+            }
+            $unsignedMSIXHash = Get-TwinTidyFileSHA256 -Path $unsignedPath
+            $signedMSIXHash = Get-TwinTidyFileSHA256 -Path $signedPath
+            if ($signedMSIXHash -ceq $unsignedMSIXHash) {
+              throw "Signed MSIX for $($msix.Architecture) is byte-identical to its unsigned input."
+            }
+            $signature = Assert-TwinTidyAuthenticodeSignature `
+              -Path $signedPath `
+              -ExpectedSignerSubject $env:SIGNER_SUBJECT `
+              -ExpectedSignerThumbprint $env:SIGNER_THUMBPRINT `
+              -SignerVerificationMode $env:SIGNER_VERIFICATION_MODE `
+              -ExpectedSignerIdentityEku $env:SIGNER_IDENTITY_EKU `
+              -RequireTimestamp $true
+            $actualSignerCertificateSHA256 += $signature.SignerThumbprint
+            $null = Assert-TwinTidyMSIXPackageBinding `
+              -Path $signedPath `
+              -ExpectedPackageName ([string]$msix.PackageName) `
+              -ExpectedPublisher $env:SIGNER_SUBJECT `
+              -ExpectedPackageVersion ([string]$msix.PackageVersion) `
+              -ExpectedArchitecture $(if ([string]$msix.Architecture -ceq "amd64") { "x64" } else { "arm64" }) `
+              -ExpectedExecutableSHA256 ([string]$msix.ExecutableSHA256) `
+              -ExpectedBuildReceiptSHA256 ([string]$msix.BuildReceiptSHA256) `
+              -ExpectedSignedProvenanceSHA256 ([string]$msix.SignedProvenanceSHA256) `
+              -RequirePackageSignature
+            $provenance = [ordered]@{
+              schema = "twintidy.msix-provenance/v1"
+              product = "TwinTidy"
+              version = $env:RELEASE_VERSION
+              architecture = [string]$msix.Architecture
+              sourceDate = $env:SOURCE_DATE
+              source = [ordered]@{ commit = $env:RELEASE_COMMIT }
+              executable = [ordered]@{ sha256 = [string]$msix.ExecutableSHA256 }
+              buildReceipt = [ordered]@{ sha256 = [string]$msix.BuildReceiptSHA256 }
+              signedProvenance = [ordered]@{ sha256 = [string]$msix.SignedProvenanceSHA256 }
+              unsignedPackage = [ordered]@{ sha256 = $unsignedMSIXHash }
+              signedPackage = [ordered]@{
+                path = [System.IO.Path]::GetFileName($signedPath)
+                sha256 = $signedMSIXHash
+                size = ([System.IO.FileInfo]::new($signedPath)).Length
+              }
+              authenticode = [ordered]@{
+                signerSubject = $signature.SignerSubject
+                signerThumbprint = $signature.SignerThumbprint
+                verificationMode = $signature.VerificationMode
+                signerIdentityEku = $signature.SignerIdentityEku
+                timestampSubject = $signature.TimestampSubject
+                timestampThumbprint = $signature.TimestampThumbprint
+              }
+            }
+            [System.IO.File]::WriteAllText(
+              "$signedPath.provenance.json",
+              (($provenance | ConvertTo-Json -Depth 8) + "`n"),
+              [System.Text.UTF8Encoding]::new($false)
+            )
+            [System.IO.File]::Delete($unsignedPath)
+          }
+
+          $finalRoot = Join-Path $env:RUNNER_TEMP "twintidy-release-final"
+          [System.IO.Directory]::CreateDirectory($finalRoot) | Out-Null
+          foreach ($path in @(Get-ChildItem -LiteralPath $portableRoot -File | Where-Object { $_.Name -ne "SHA256SUMS.signed.txt" })) {
+            [System.IO.File]::Copy($path.FullName, (Join-Path $finalRoot $path.Name), $false)
+          }
+          foreach ($path in @(Get-ChildItem -LiteralPath $msixRoot -File -Filter "*.msix*")) {
+            [System.IO.File]::Copy($path.FullName, (Join-Path $finalRoot $path.Name), $false)
+          }
+          if (@(Get-ChildItem -LiteralPath $finalRoot -File | Where-Object { $_.Name -match '\.unsigned\.' }).Count -ne 0) {
+            throw "Unsigned pipeline intermediates reached the final release directory."
+          }
+
+          $artifacts = @()
+          foreach ($file in @(Get-ChildItem -LiteralPath $finalRoot -File | Sort-Object -Property Name)) {
+            $artifacts += [ordered]@{
+              path = $file.Name
+              size = [int64]$file.Length
+              sha256 = Get-TwinTidyFileSHA256 -Path $file.FullName
+            }
+          }
+          $actualSignerCertificateSHA256 = @($actualSignerCertificateSHA256 | Sort-Object -Unique)
+          $manifest = [ordered]@{
+            schema = "twintidy.release-manifest/v1"
+            product = "TwinTidy"
+            version = $env:RELEASE_VERSION
+            sourceDate = $env:SOURCE_DATE
+            source = [ordered]@{ commit = $env:RELEASE_COMMIT }
+            publisher = [ordered]@{
+              displayName = "Kayilan Inc"
+              certificateSubject = $env:SIGNER_SUBJECT
+              verificationMode = $env:SIGNER_VERIFICATION_MODE
+              certificatesSHA256 = $actualSignerCertificateSHA256
+              durableIdentityEku = if ($actualSignerIdentityEku.Count -eq 0) { $null } else { $actualSignerIdentityEku[0] }
+            }
+            artifacts = $artifacts
+          }
+          $manifestPath = Join-Path $finalRoot "TwinTidy.release-manifest.json"
+          [System.IO.File]::WriteAllText(
+            $manifestPath,
+            (($manifest | ConvertTo-Json -Depth 8) + "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          $checksumFiles = @(Get-ChildItem -LiteralPath $finalRoot -File | Sort-Object -Property Name)
+          $checksumLines = $checksumFiles | ForEach-Object {
+            "{0}  {1}" -f (Get-TwinTidyFileSHA256 -Path $_.FullName), $_.Name
+          }
+          $checksumPath = Join-Path $finalRoot "SHA256SUMS.txt"
+          [System.IO.File]::WriteAllText($checksumPath, (($checksumLines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
+          "final_root=$finalRoot" >> $env:GITHUB_OUTPUT
+
+      - name: Upload final signed release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: TwinTidy-${{ needs.validate-tag.outputs.version }}-signed-release
+          path: ${{ steps.package.outputs.final_root }}
+          if-no-files-found: error
+          retention-days: 30
+
+  signed-native-smoke:
+    name: Signed native smoke ${{ matrix.goarch }}
+    needs:
+      - validate-tag
+      - sign-and-package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            runner: windows-2025
+          - goarch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out immutable release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.commit }}
+
+      - name: Download signed release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: TwinTidy-${{ needs.validate-tag.outputs.version }}-signed-release
+          path: ${{ runner.temp }}/twintidy-release
+
+      - name: Verify checksums, provenance, package bindings, and timestamps
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          SOURCE_DATE: ${{ needs.validate-tag.outputs.source_date }}
+        run: |
+          .\scripts\verify-final-release.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -Commit $env:RELEASE_COMMIT `
+            -SourceDate $env:SOURCE_DATE `
+            -Directory (Join-Path $env:RUNNER_TEMP "twintidy-release")
+
+      - name: Verify signature, runtime identity, and repeated UI startup
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          SOURCE_DATE: ${{ needs.validate-tag.outputs.source_date }}
+          GOARCH: ${{ matrix.goarch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . .\scripts\TwinTidy.Release.ps1
+          $root = Join-Path $env:RUNNER_TEMP "twintidy-release"
+          $manifest = Get-Content -LiteralPath (Join-Path $root "TwinTidy.release-manifest.json") -Raw | ConvertFrom-Json
+          if ($manifest.version -cne $env:RELEASE_VERSION -or $manifest.source.commit -cne $env:RELEASE_COMMIT) {
+            throw "Release manifest identity mismatch."
+          }
+          $archive = Join-Path $root "TwinTidy-$($env:RELEASE_VERSION)-windows-$($env:GOARCH).zip"
+          $extract = Join-Path $env:RUNNER_TEMP "twintidy-signed-smoke-$($env:GOARCH)"
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract
+          $executable = Join-Path $extract "TwinTidy.exe"
+          $expectedCertificateSHA256 = if ($manifest.publisher.verificationMode -ceq "fixed-certificate") { [string]$manifest.publisher.certificatesSHA256[0] } else { "" }
+          $null = Assert-TwinTidyAuthenticodeSignature `
+            -Path $executable `
+            -ExpectedSignerSubject ([string]$manifest.publisher.certificateSubject) `
+            -ExpectedSignerThumbprint $expectedCertificateSHA256 `
+            -SignerVerificationMode ([string]$manifest.publisher.verificationMode) `
+            -ExpectedSignerIdentityEku ([string]$manifest.publisher.durableIdentityEku) `
+            -RequireTimestamp $true
+          $actualVersion = (& $executable --version 2>&1 | Out-String).Trim()
+          $expectedVersion = "TwinTidy $env:RELEASE_VERSION (commit $env:RELEASE_COMMIT, source date $env:SOURCE_DATE)"
+          if ($actualVersion -cne $expectedVersion) {
+            throw "Signed runtime version '$actualVersion' does not equal '$expectedVersion'."
+          }
+          for ($attempt = 1; $attempt -le 25; $attempt++) {
+            $process = Start-Process -FilePath $executable -ArgumentList @("--ui-smoke-test") -Wait -PassThru -WindowStyle Hidden
+            if ($process.ExitCode -ne 0) {
+              throw "Signed native UI smoke attempt $attempt failed with exit code $($process.ExitCode)."
+            }
+          }
+
+          $packageName = "KayilanInc.TwinTidy"
+          if (@(Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue).Count -ne 0) {
+            throw "Release runner already has a TwinTidy package; refusing to alter an existing installation."
+          }
+          $msix = Join-Path $root "TwinTidy-$($env:RELEASE_VERSION)-windows-$($env:GOARCH).msix"
+          $null = Assert-TwinTidyAuthenticodeSignature `
+            -Path $msix `
+            -ExpectedSignerSubject ([string]$manifest.publisher.certificateSubject) `
+            -ExpectedSignerThumbprint $expectedCertificateSHA256 `
+            -SignerVerificationMode ([string]$manifest.publisher.verificationMode) `
+            -ExpectedSignerIdentityEku ([string]$manifest.publisher.durableIdentityEku) `
+            -RequireTimestamp $true
+          $previousTag = (& gh release list --repo $env:GITHUB_REPOSITORY --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>$null | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to determine the previous release for MSIX upgrade testing."
+          }
+          if (-not [string]::IsNullOrWhiteSpace($previousTag)) {
+            $previousRoot = Join-Path $env:RUNNER_TEMP "twintidy-previous-release-$($env:GOARCH)"
+            [System.IO.Directory]::CreateDirectory($previousRoot) | Out-Null
+            & gh release download $previousTag `
+              --repo $env:GITHUB_REPOSITORY `
+              --pattern "TwinTidy-*-windows-$($env:GOARCH).msix" `
+              --dir $previousRoot
+            if ($LASTEXITCODE -ne 0) {
+              throw "Previous release '$previousTag' has no downloadable $($env:GOARCH) MSIX for upgrade testing."
+            }
+            $previousPackages = @(Get-ChildItem -LiteralPath $previousRoot -File -Filter "*.msix")
+            if ($previousPackages.Count -ne 1) {
+              throw "Expected one previous $($env:GOARCH) MSIX; found $($previousPackages.Count)."
+            }
+            $previousSignature = Get-AuthenticodeSignature -LiteralPath $previousPackages[0].FullName
+            if ([string]$previousSignature.Status -cne "Valid" -or
+                $previousSignature.SignerCertificate.Subject -cne $manifest.publisher.certificateSubject) {
+              throw "Previous MSIX publisher does not match the current release identity."
+            }
+            Add-AppxPackage -Path $previousPackages[0].FullName -ForceApplicationShutdown
+            if (@(Get-AppxPackage -Name $packageName).Count -ne 1) {
+              throw "Previous release '$previousTag' did not install for upgrade testing."
+            }
+            Write-Host "Testing in-place MSIX upgrade from $previousTag."
+          } else {
+            Write-Host "No previous GitHub release exists; recording first-release fresh-install evidence."
+          }
+          $installed = $null
+          try {
+            Add-AppxPackage -Path $msix -ForceApplicationShutdown
+            $packages = @(Get-AppxPackage -Name $packageName)
+            if ($packages.Count -ne 1) {
+              throw "Expected one installed final TwinTidy MSIX; found $($packages.Count)."
+            }
+            $installed = $packages[0]
+            $installedExecutable = Join-Path $installed.InstallLocation "TwinTidy.exe"
+            $installedVersion = (& $installedExecutable --version 2>&1 | Out-String).Trim()
+            if ($installedVersion -cne $expectedVersion) {
+              throw "Installed final MSIX runtime version '$installedVersion' does not equal '$expectedVersion'."
+            }
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              $process = Start-Process -FilePath $installedExecutable -ArgumentList @("--ui-smoke-test") -Wait -PassThru -WindowStyle Hidden
+              if ($process.ExitCode -ne 0) {
+                throw "Installed final MSIX UI smoke attempt $attempt failed with exit code $($process.ExitCode)."
+              }
+            }
+          } finally {
+            foreach ($package in @(Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue)) {
+              Remove-AppxPackage -Package $package.PackageFullName
+            }
+          }
+          if (@(Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue).Count -ne 0) {
+            throw "Final TwinTidy MSIX remained installed after native release smoke."
+          }
+          $reinstalled = $null
+          try {
+            Add-AppxPackage -Path $msix -ForceApplicationShutdown
+            $packages = @(Get-AppxPackage -Name $packageName)
+            if ($packages.Count -ne 1) {
+              throw "Expected one reinstalled final TwinTidy MSIX; found $($packages.Count)."
+            }
+            $reinstalled = $packages[0]
+            $reinstalledExecutable = Join-Path $reinstalled.InstallLocation "TwinTidy.exe"
+            $reinstalledVersion = (& $reinstalledExecutable --version 2>&1 | Out-String).Trim()
+            if ($reinstalledVersion -cne $expectedVersion) {
+              throw "Reinstalled final MSIX runtime version '$reinstalledVersion' does not equal '$expectedVersion'."
+            }
+            $process = Start-Process -FilePath $reinstalledExecutable -ArgumentList @("--ui-smoke-test") -Wait -PassThru -WindowStyle Hidden
+            if ($process.ExitCode -ne 0) {
+              throw "Reinstalled final MSIX UI smoke failed with exit code $($process.ExitCode)."
+            }
+          } finally {
+            if ($null -ne $reinstalled) {
+              Remove-AppxPackage -Package $reinstalled.PackageFullName
+            }
+          }
+          if (@(Get-AppxPackage -Name $packageName -ErrorAction SilentlyContinue).Count -ne 0) {
+            throw "Reinstalled TwinTidy MSIX remained installed after release lifecycle test."
+          }
+
+  publish:
+    name: Attest and publish prerelease
+    needs:
+      - validate-tag
+      - signed-native-smoke
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: production-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.validate-tag.outputs.commit }}
+
+      - name: Download signed release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: TwinTidy-${{ needs.validate-tag.outputs.version }}-signed-release
+          path: ${{ runner.temp }}/twintidy-release
+
+      - name: Reverify final release set before attestation
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          SOURCE_DATE: ${{ needs.validate-tag.outputs.source_date }}
+        run: |
+          .\scripts\verify-final-release.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -Commit $env:RELEASE_COMMIT `
+            -SourceDate $env:SOURCE_DATE `
+            -Directory (Join-Path $env:RUNNER_TEMP "twintidy-release")
+
+      - name: Attest final release assets
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
+        with:
+          subject-path: ${{ runner.temp }}/twintidy-release/*
+
+      - name: Publish immutable GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-tag.outputs.version }}
+          PRERELEASE: ${{ needs.validate-tag.outputs.prerelease }}
+        run: |
+          $null = .\scripts\validate-release-tag.ps1 `
+            -Tag $env:RELEASE_TAG `
+            -ExpectedCommit "${{ needs.validate-tag.outputs.commit }}"
+          & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release '$env:RELEASE_TAG' already exists; immutable assets must not be replaced."
+          }
+          $assetRoot = Join-Path $env:RUNNER_TEMP "twintidy-release"
+          $manifest = Get-Content -LiteralPath (Join-Path $assetRoot "TwinTidy.release-manifest.json") -Raw | ConvertFrom-Json
+          $sourceNotes = Join-Path $env:GITHUB_WORKSPACE "docs\releases\$($env:RELEASE_TAG).md"
+          $notes = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          $identity = @(
+            "## Verified publisher identity",
+            "",
+            "- Certificate subject: ``$($manifest.publisher.certificateSubject)``",
+            "- Verification mode: ``$($manifest.publisher.verificationMode)``",
+            "- Certificate SHA-256: ``$(@($manifest.publisher.certificatesSHA256) -join ', ')``",
+            "- Durable identity EKU: ``$($manifest.publisher.durableIdentityEku)``",
+            ""
+          ) -join "`n"
+          [System.IO.File]::WriteAllText(
+            $notes,
+            ($identity + [System.IO.File]::ReadAllText($sourceNotes)),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          $arguments = @(
+            "release", "create", $env:RELEASE_TAG,
+            "--repo", $env:GITHUB_REPOSITORY,
+            "--verify-tag",
+            "--title", "TwinTidy $env:RELEASE_VERSION",
+            "--notes-file", $notes
+          )
+          if ($env:PRERELEASE -ceq "true") {
+            $arguments += "--prerelease"
+          }
+          $arguments += @(Get-ChildItem -LiteralPath $assetRoot -File | Sort-Object -Property Name | ForEach-Object { $_.FullName })
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release publication failed with exit code $LASTEXITCODE."
+          }

@@ -9,7 +9,7 @@ TwinTidy ships separate Windows artifacts for:
 - `windows-amd64`
 - `windows-arm64`
 
-Windows `386` is unsupported. Release binaries use `CGO_ENABLED=0` and run as the current user. A portable archive is required; a per-user installer may be added after its install, upgrade, repair, and uninstall paths pass testing.
+Windows `386` is unsupported. Release binaries use `CGO_ENABLED=0` and run as the current user. Each architecture ships as both a portable ZIP and a per-user MSIX. The MSIX is publishable only after its native install, upgrade, uninstall, and reinstall lifecycle passes.
 
 ## Version policy
 
@@ -22,7 +22,9 @@ Use Semantic Versioning tags such as `v0.1.0-beta.1` and `v1.0.0`. The same vers
 - installer metadata
 - changelog entry
 
-PE fixed versions are four numeric fields. Stable `MAJOR.MINOR.PATCH` maps to `MAJOR.MINOR.PATCH.0`. A prerelease must end in a numeric sequence from 1 through 65535, so `0.1.0-beta.1` maps unambiguously to `0.1.0.1` while retaining `0.1.0-beta.1` in the PE string metadata and runtime output. Each numeric component must fit an unsigned 16-bit field. The special development version `dev` maps to `0.0.0.0`.
+PE fixed versions are four numeric fields. Stable `MAJOR.MINOR.PATCH` maps to `MAJOR.MINOR.PATCH.0`. A prerelease must end in a numeric sequence from 1 through 65535, so `0.1.0-beta.1` maps to PE `0.1.0.1` while retaining the SemVer string in PE metadata and runtime output. Each numeric component must fit an unsigned 16-bit field. The special development version `dev` maps to PE `0.0.0.0`.
+
+MSIX forbids a zero major version, so its distinct monotonic mapping is `(MAJOR + 1).MINOR.PATCH.SEQUENCE`; `0.1.0-beta.1` therefore maps to MSIX `1.1.0.1`. SemVer major `65535` is not MSIX-representable. Tag validation rejects any MSIX version collision, non-increasing package version, or reuse of one numeric prerelease sequence under different labels.
 
 ## Authority and prerequisites
 
@@ -73,7 +75,7 @@ Each artifact must contain Common Controls v6, `asInvoker`, PerMonitorV2 DPI awa
 
 The checked-in objects carry deterministic `dev` metadata. `build.ps1` copies the current source into a verified temporary staging directory, generates requested-version resources only in that stage, builds, and removes the stage. It verifies the checked-in development objects first and never leaves a version-specific resource in the working tree.
 
-CompanyName, copyright, and signing-subject values remain blank until the product owner confirms the legal publisher identity. A public production release is blocked until those fields are approved and consistently applied to PE, installer, signature, and release metadata.
+The approved product publisher is **Kayilan Inc** and the project is Copyright (c) 2026 Kayilan Inc. PE, installer, signature, and release metadata must use that identity consistently. A public production release remains blocked until the signing certificate's exact subject and certificate SHA-256 are approved and configured in the protected signing environment.
 
 ## Reproducible unsigned build
 
@@ -108,13 +110,13 @@ foreach ($Result in $BuildResults) {
 
 `package.ps1` requires the executable and receipt hashes captured from the completed build. It locks both inputs against writes and replacement while creating the archive, embeds the receipt beside `TwinTidy.exe`, re-hashes both ZIP entries, and verifies the final archive/checksum binding. It creates deterministic portable ZIPs with normalized entry timestamps and a UTF-8 `SHA256SUMS.txt`. Build the unsigned executables and packages twice from separate absolute paths with the same commit, toolchain, resource inputs, and source-date metadata. Their SHA-256 values and receipts must match. Preserve those hashes and build provenance before signing.
 
-Each portable ZIP contains `TwinTidy.exe`, its exact `TwinTidy.build-receipt.json`, and the deterministic `THIRD_PARTY_NOTICES.txt`. Validate the notice source before packaging:
+Each portable ZIP contains `TwinTidy.exe`, its exact `TwinTidy.build-receipt.json`, the MIT `LICENSE`, and the deterministic `THIRD_PARTY_NOTICES.txt`. Validate the notice source before packaging:
 
 ```powershell
 .\scripts\generate-notices.ps1 -Check
 ```
 
-The repository verification command first rejects a dirty repository, then performs two independent exact-commit staged builds, verifies their source/build receipts, packages digest-pinned inputs, compares hashes, checks PE machine values, semantically validates extracted manifests, inspects icon and version resources, and proves that version-specific builds did not modify tracked development resources:
+The repository verification command first rejects a dirty repository, then performs two independent exact-commit staged builds, verifies their source/build receipts, packages digest-pinned inputs, compares hashes, checks PE machine values, semantically validates extracted manifests, inspects icon and version resources, and proves that version-specific builds did not modify tracked development resources. `-VerifiedOutputDirectory` exports one immutable unsigned executable and build receipt per architecture plus `TwinTidy.unsigned-reproducibility.json` for the protected signing job:
 
 ```powershell
 .\scripts\verify-release.ps1 -Version $Version
@@ -164,10 +166,12 @@ Example verification:
 ```powershell
 Get-AuthenticodeSignature .\dist\TwinTidy.exe | Format-List
 signtool verify /pa /all /v .\dist\TwinTidy.exe
-signtool verify /pa /all /v .\dist\TwinTidy-Setup.msi
+signtool verify /pa /all /v .\dist\TwinTidy.msix
 ```
 
-The final checksum file uses SHA-256 and lists every downloadable artifact. Release notes identify the supported architectures, safety-impacting changes, known limitations, upgrade behavior, and rollback procedure.
+`sign-release.ps1` invokes the reviewed provider adapter without passing credentials on the command line, requires the exact configured signer subject and certificate SHA-256, requires a timestamp certificate, preserves the unsigned receipt, and emits `TwinTidy.signed-provenance.json`. `package-signed.ps1` creates the final portable archive only from those digest-pinned inputs. `package-msix.ps1` creates an unsigned package from the already signed executable; the protected job signs and re-verifies the MSIX before publication. See [the signing adapter contract](SIGNING_ADAPTER.md) and [ADR 0006](adr/0006-per-user-msix-distribution.md).
+
+The final `SHA256SUMS.txt` uses SHA-256 and lists every downloadable artifact plus `TwinTidy.release-manifest.json`. Release notes identify the supported architectures, exact certificate identity, safety-impacting changes, known limitations, upgrade behavior, and rollback procedure.
 
 ## GitHub publication
 

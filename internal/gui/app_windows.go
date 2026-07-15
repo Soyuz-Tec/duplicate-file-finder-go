@@ -160,7 +160,12 @@ func SmokeTest() error {
 	if err := ui.create(); err != nil {
 		return fmt.Errorf("create TwinTidy smoke-test window: %w", err)
 	}
-	ui.mw.Dispose()
+	ui.mw.Synchronize(func() {
+		_ = ui.mw.Close()
+	})
+	if exitCode := ui.mw.Run(); exitCode != 0 {
+		return fmt.Errorf("smoke-test window message loop exited with code %d", exitCode)
+	}
 	return nil
 }
 

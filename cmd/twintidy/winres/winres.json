@@ -19,12 +19,12 @@
         },
         "info": {
           "0409": {
-            "Comments": "Development build; publisher identity pending confirmation",
-            "CompanyName": "",
-            "FileDescription": "TwinTidy - Safe Duplicate File Cleaner",
+            "Comments": "Development build; official public releases are Authenticode signed",
+            "CompanyName": "Kayilan Inc",
+            "FileDescription": "TwinTidy - Safe Duplicate File Review",
             "FileVersion": "dev",
             "InternalName": "TwinTidy",
-            "LegalCopyright": "",
+            "LegalCopyright": "Copyright (c) 2026 Kayilan Inc",
             "LegalTrademarks": "",
             "OriginalFilename": "TwinTidy.exe",
             "PrivateBuild": "",

@@ -24,7 +24,7 @@ jobs:
       GOFLAGS: -mod=readonly
     steps:
       - name: Check out source
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -38,6 +38,10 @@ jobs:
         shell: pwsh
         run: .\scripts\generate-resources.ps1 -Check
 
+      - name: Verify deterministic MSIX assets
+        shell: pwsh
+        run: .\scripts\generate-msix-assets.ps1 -Check
+
       - name: Verify third-party notices
         shell: pwsh
         run: .\scripts\generate-notices.ps1 -Check
@@ -45,6 +49,10 @@ jobs:
       - name: Test release source and artifact binding
         shell: pwsh
         run: .\scripts\test-release-hardening.ps1
+
+      - name: Test signed-release provenance and rejection policy
+        shell: pwsh
+        run: .\scripts\test-signed-release-hardening.ps1
 
       - name: Check formatting
         shell: pwsh
@@ -99,7 +107,7 @@ jobs:
       GOFLAGS: -mod=readonly
     steps:
       - name: Check out source
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -151,12 +159,52 @@ jobs:
           if ($actualVersion -ne $expectedVersion) {
             throw "Runtime version '$actualVersion' does not equal '$expectedVersion'."
           }
-          $smoke = Start-Process `
-            -FilePath $out `
-            -ArgumentList @("--ui-smoke-test") `
-            -Wait `
-            -PassThru `
-            -WindowStyle Hidden
-          if ($smoke.ExitCode -ne 0) {
-            throw "Native UI smoke test failed with exit code $($smoke.ExitCode)."
+          for ($attempt = 1; $attempt -le 25; $attempt++) {
+            $smokeStderr = Join-Path $env:RUNNER_TEMP "twintidy-ui-smoke-${env:GOARCH}-$attempt.err"
+            $smoke = Start-Process `
+              -FilePath $out `
+              -ArgumentList @("--ui-smoke-test") `
+              -Wait `
+              -PassThru `
+              -WindowStyle Hidden `
+              -RedirectStandardError $smokeStderr
+            if ($smoke.ExitCode -ne 0) {
+              if (Test-Path -LiteralPath $smokeStderr) {
+                Get-Content -LiteralPath $smokeStderr | ForEach-Object { Write-Host $_ }
+              }
+              throw "Native UI smoke test attempt $attempt failed with exit code $($smoke.ExitCode)."
+            }
           }
+
+  msix-lifecycle:
+    name: MSIX lifecycle ${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            runner: windows-2025
+          - goarch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: ${{ matrix.goarch }}
+      GOFLAGS: -mod=readonly
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test signed MSIX install, upgrade, uninstall, and reinstall
+        shell: pwsh
+        run: .\scripts\test-msix-lifecycle.ps1 -Architecture $env:GOARCH -SmokeIterations 3

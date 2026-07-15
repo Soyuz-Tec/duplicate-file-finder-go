@@ -10,6 +10,7 @@ function Resolve-TwinTidyVersion {
         return [pscustomobject]@{
             Canonical = "dev"
             PEVersion = "0.0.0.0"
+            MSIXVersion = "1.0.0.0"
             NumericParts = [uint16[]]@(0, 0, 0, 0)
             IsPrerelease = $true
             SpecialBuild = "Development"
@@ -62,9 +63,15 @@ function Resolve-TwinTidyVersion {
         $canonical += "-$prerelease"
     }
 
+    $msixVersion = $null
+    if ($numeric[0] -lt [uint16]::MaxValue) {
+        $msixVersion = ("{0}.{1}.{2}.{3}" -f ([uint32]$numeric[0] + 1), $numeric[1], $numeric[2], $fourthPart)
+    }
+
     return [pscustomobject]@{
         Canonical = $canonical
         PEVersion = ("{0}.{1}.{2}.{3}" -f $numeric[0], $numeric[1], $numeric[2], $fourthPart)
+        MSIXVersion = $msixVersion
         NumericParts = [uint16[]]@($numeric[0], $numeric[1], $numeric[2], $fourthPart)
         IsPrerelease = -not [string]::IsNullOrWhiteSpace($prerelease)
         SpecialBuild = $specialBuild

@@ -76,7 +76,7 @@ function New-VersionedConfig {
     $strings = $versionResource.info.'0409'
     $strings.FileVersion = $resolved.Canonical
     $strings.ProductVersion = $resolved.Canonical
-    $strings.Comments = if ($resolved.Canonical -eq "dev") { "Development build; publisher identity pending confirmation" } elseif ($resolved.IsPrerelease) { "Prerelease build" } else { "Release build" }
+    $strings.Comments = if ($resolved.Canonical -eq "dev") { "Development build; official public releases are Authenticode signed" } elseif ($resolved.IsPrerelease) { "Prerelease build" } else { "Release build" }
     $strings.SpecialBuild = $resolved.SpecialBuild
 
     $script:temporaryConfigPath = Join-Path (Split-Path -Parent $configPath) ("winres.generated." + [System.Guid]::NewGuid().ToString("N") + ".json")

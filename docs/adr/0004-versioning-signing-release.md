@@ -63,4 +63,4 @@ Pull-request workflows never receive signing authority. Signing credentials live
 - Packaging rejects a modified executable or receipt even when it remains at the expected path.
 - Authenticode and installer signature verification pass after timestamping.
 - Final checksums and provenance refer to the exact published bytes.
-- Install, upgrade, repair, uninstall, rollback, amd64 smoke, and ARM64 smoke evidence is retained with the release.
+- Install, upgrade, downgrade rejection, uninstall, reinstall, rollback-after-uninstall, package-integrity, amd64 smoke, and ARM64 smoke evidence is retained with the release.

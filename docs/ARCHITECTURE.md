@@ -121,13 +121,14 @@ Hash loops and directory enumeration check context between bounded reads or entr
 
 ## 8. Deployment
 
-The shipped unit is a Windows GUI executable, with an optional per-user installer. Separate artifacts are built for `amd64` and `arm64`. Each embeds the Common Controls v6 manifest, per-monitor DPI settings, product icon, and version metadata.
+The shipped units are a portable Windows GUI executable archive and a per-user MSIX. Separate artifacts are built for `amd64` and `arm64`. Each executable embeds the Common Controls v6 manifest, per-monitor DPI settings, product icon, and version metadata. The MSIX uses the exact certificate-subject publisher identity and Windows-managed registration, upgrade, uninstall, and reinstall behavior defined by ADR 0006.
 
 Unsigned binaries are built reproducibly and attested. Authenticode signing and timestamping occur after reproducibility verification. The application runs as the current user (`asInvoker`) and must not request elevation for normal operation.
 
 ## 9. Cross-cutting rules
 
 - Paths in logs are limited to what is necessary for support; file contents, hashes that are not needed, environment dumps, and secrets are excluded.
+- Portable diagnostics use `%LOCALAPPDATA%\TwinTidy\logs`. MSIX may virtualize that path into package-private application data, which Windows removes with the package; users must export logs they need before uninstalling.
 - Previews are untrusted input. Use bounded reads, constrain navigation, and avoid automatic macro/script execution.
 - Errors are actionable and preserve rows when an outcome is uncertain.
 - Accessibility uses native focus, keyboard, contrast, high-DPI, and screen-reader behavior.
@@ -135,4 +136,4 @@ Unsigned binaries are built reproducibly and attested. Authenticode signing and 
 
 ## 10. Production acceptance
 
-A stable release requires the complete verification matrix in `docs/RELEASE.md`, native smoke tests on both architectures, destructive fault injection, signature verification, and an independent safety review. Installer lifecycle testing is mandatory if an installer is distributed; portable archives remain the required baseline artifact.
+A stable release requires the complete verification matrix in `docs/RELEASE.md`, native smoke tests on both architectures, destructive fault injection, signature verification, an independent safety review, and native MSIX install, upgrade, uninstall, and reinstall evidence. Portable archives remain a required baseline artifact.

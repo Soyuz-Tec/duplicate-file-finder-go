@@ -116,7 +116,7 @@ function Assert-PortableArchiveBinding {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
     try {
         $actualEntries = @($archive.Entries | ForEach-Object { $_.FullName } | Sort-Object)
-        $expectedEntries = @("THIRD_PARTY_NOTICES.txt", "TwinTidy.build-receipt.json", "TwinTidy.exe")
+        $expectedEntries = @("LICENSE", "THIRD_PARTY_NOTICES.txt", "TwinTidy.build-receipt.json", "TwinTidy.exe")
         if (($actualEntries -join "|") -cne ($expectedEntries -join "|")) {
             throw "Unexpected portable package entries in $ArchivePath`: $($actualEntries -join ', ')."
         }
@@ -171,6 +171,10 @@ function Assert-PortableArchiveBinding {
 Add-Type -AssemblyName System.IO.Compression
 [System.IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $archives = @()
+$licensePath = Join-Path $repoRoot "LICENSE"
+if (-not [System.IO.File]::Exists($licensePath)) {
+    throw "License file is missing: $licensePath"
+}
 $noticePath = Join-Path $repoRoot "THIRD_PARTY_NOTICES.txt"
 if (-not [System.IO.File]::Exists($noticePath)) {
     throw "Third-party notice file is missing: $noticePath"
@@ -226,49 +230,55 @@ foreach ($arch in $targets) {
                 throw "Executable size '$($executableStream.Length)' does not match build receipt '$($receiptBinding.ExecutableSize)' for $arch."
             }
 
-            $noticeStream = [System.IO.File]::Open($noticePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            $licenseStream = [System.IO.File]::Open($licensePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
             try {
-                $archivePath = Join-Path $OutputDirectory "TwinTidy-$($versionInfo.Canonical)-windows-$arch.zip"
-                if ([System.IO.File]::Exists($archivePath)) {
-                    [System.IO.File]::Delete($archivePath)
-                }
-
-                $archiveCompleted = $false
+                $noticeStream = [System.IO.File]::Open($noticePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
                 try {
-                    $archiveStream = [System.IO.File]::Open($archivePath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
-                    try {
-                        $archive = [System.IO.Compression.ZipArchive]::new($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
-                        try {
-                            $packageFiles = @(
-                                [pscustomobject]@{ Stream = $noticeStream; Entry = "THIRD_PARTY_NOTICES.txt" }
-                                [pscustomobject]@{ Stream = $receiptStream; Entry = "TwinTidy.build-receipt.json" }
-                                [pscustomobject]@{ Stream = $executableStream; Entry = "TwinTidy.exe" }
-                            ) | Sort-Object -Property Entry
-                            foreach ($packageFile in $packageFiles) {
-                                $packageFile.Stream.Position = 0
-                                $entry = $archive.CreateEntry($packageFile.Entry, [System.IO.Compression.CompressionLevel]::Optimal)
-                                $entry.LastWriteTime = $entryTime
-                                $entryStream = $entry.Open()
-                                try {
-                                    $packageFile.Stream.CopyTo($entryStream)
-                                } finally {
-                                    $entryStream.Dispose()
-                                }
-                            }
-                        } finally {
-                            $archive.Dispose()
-                        }
-                    } finally {
-                        $archiveStream.Dispose()
-                    }
-                    $archiveCompleted = $true
-                } finally {
-                    if (-not $archiveCompleted -and [System.IO.File]::Exists($archivePath)) {
+                    $archivePath = Join-Path $OutputDirectory "TwinTidy-$($versionInfo.Canonical)-windows-$arch.zip"
+                    if ([System.IO.File]::Exists($archivePath)) {
                         [System.IO.File]::Delete($archivePath)
                     }
+
+                    $archiveCompleted = $false
+                    try {
+                        $archiveStream = [System.IO.File]::Open($archivePath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+                        try {
+                            $archive = [System.IO.Compression.ZipArchive]::new($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
+                            try {
+                                $packageFiles = @(
+                                    [pscustomobject]@{ Stream = $licenseStream; Entry = "LICENSE" }
+                                    [pscustomobject]@{ Stream = $noticeStream; Entry = "THIRD_PARTY_NOTICES.txt" }
+                                    [pscustomobject]@{ Stream = $receiptStream; Entry = "TwinTidy.build-receipt.json" }
+                                    [pscustomobject]@{ Stream = $executableStream; Entry = "TwinTidy.exe" }
+                                ) | Sort-Object -Property Entry
+                                foreach ($packageFile in $packageFiles) {
+                                    $packageFile.Stream.Position = 0
+                                    $entry = $archive.CreateEntry($packageFile.Entry, [System.IO.Compression.CompressionLevel]::Optimal)
+                                    $entry.LastWriteTime = $entryTime
+                                    $entryStream = $entry.Open()
+                                    try {
+                                        $packageFile.Stream.CopyTo($entryStream)
+                                    } finally {
+                                        $entryStream.Dispose()
+                                    }
+                                }
+                            } finally {
+                                $archive.Dispose()
+                            }
+                        } finally {
+                            $archiveStream.Dispose()
+                        }
+                        $archiveCompleted = $true
+                    } finally {
+                        if (-not $archiveCompleted -and [System.IO.File]::Exists($archivePath)) {
+                            [System.IO.File]::Delete($archivePath)
+                        }
+                    }
+                } finally {
+                    $noticeStream.Dispose()
                 }
             } finally {
-                $noticeStream.Dispose()
+                $licenseStream.Dispose()
             }
         } finally {
             $executableStream.Dispose()

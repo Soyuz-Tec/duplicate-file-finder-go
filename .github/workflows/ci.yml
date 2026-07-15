@@ -82,8 +82,35 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Staticcheck
+        shell: pwsh
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
+
+      - name: Lint workflows
+        shell: pwsh
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
       - name: Test
         run: go test ./... -count=1 -coverprofile=coverage.out
+
+      - name: Test with race detector
+        env:
+          CGO_ENABLED: "1"
+        run: go test ./... -count=1 -race
+
+      - name: Enforce coverage floor
+        shell: pwsh
+        run: |
+          $line = (go tool cover -func=coverage.out | Select-Object -Last 1)
+          if ($line -notmatch '(\d+\.\d+)%') {
+            throw "Total statement coverage was not reported."
+          }
+          $total = [double]$Matches[1]
+          $floor = 52.0
+          if ($total -lt $floor) {
+            throw "Total statement coverage $total% fell below the $floor% floor."
+          }
+          Write-Host "Total statement coverage: $total% (floor $floor%)"
 
       - name: Check patch whitespace
         run: git diff --check

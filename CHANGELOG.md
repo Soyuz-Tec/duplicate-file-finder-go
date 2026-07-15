@@ -4,6 +4,15 @@ All notable TwinTidy changes will be documented here. The project uses [Semantic
 
 ## [Unreleased]
 
+### Added
+
+- Staticcheck, workflow linting, race-detector tests, and a total-coverage floor as CI quality gates.
+- Fuzz targets for directory protection, user-file classification, and category mapping, plus staged-scan throughput benchmarks.
+
+### Changed
+
+- Replaced deprecated `syscall.Syscall` COM calls with `syscall.SyscallN` in the folder dialog and Shell thumbnail adapters, and removed an unused snapshot-verification helper superseded by its scope-aware variant.
+
 ## [0.1.0-beta.1] - 2026-07-12
 
 ### Added

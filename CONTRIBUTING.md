@@ -29,6 +29,15 @@ For resource or release changes, also run:
 ./scripts/verify-release.ps1 -Version dev
 ```
 
+Static analysis and workflow linting run in CI and can be reproduced locally without a separate installation:
+
+```powershell
+go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+```
+
+If a gitignored directory containing Go module sources exists in the working tree (for example a local module-cache export under `dist/`), the `./...` pattern fails on its versioned import paths; run the same commands against `./cmd/... ./internal/...` instead. CI checkouts are clean, so workflows keep using `./...`.
+
 Do not use `go env -w` in project instructions, commit generated executables, hard-code credentials, or add a permanent-delete fallback.
 
 ## Destructive-workflow changes

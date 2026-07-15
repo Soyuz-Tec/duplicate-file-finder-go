@@ -418,28 +418,6 @@ func snapshotsEqual(left, right fileSnapshot) bool {
 		left.namedStreams == right.namedStreams
 }
 
-func verifyStableSnapshot(file *os.File, path string, expected fileSnapshot) error {
-	current, err := snapshotOpenFile(file, path)
-	if err != nil {
-		return err
-	}
-	if !snapshotsEqual(expected, current) {
-		return errFileChanged
-	}
-
-	pathFile, pathSnapshot, err := openFileSnapshot(path)
-	if err != nil {
-		return errFileChanged
-	}
-	if err := pathFile.Close(); err != nil {
-		return err
-	}
-	if !snapshotsEqual(expected, pathSnapshot) {
-		return errFileChanged
-	}
-	return nil
-}
-
 func verifyStableSnapshotInScope(file *os.File, path string, expected fileSnapshot, scope AuthorizedScope) error {
 	current, err := snapshotOpenFile(file, path)
 	if err != nil {

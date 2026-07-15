@@ -159,21 +159,21 @@ func (d *modernFileOpenDialog) release() {
 	if d == nil || d.LpVtbl == nil {
 		return
 	}
-	_, _, _ = syscall.Syscall(d.LpVtbl.Release, 1, uintptr(unsafe.Pointer(d)), 0, 0)
+	_, _, _ = syscall.SyscallN(d.LpVtbl.Release, uintptr(unsafe.Pointer(d)))
 }
 
 func (d *modernFileOpenDialog) show(owner win.HWND) win.HRESULT {
-	ret, _, _ := syscall.Syscall(d.LpVtbl.Show, 2, uintptr(unsafe.Pointer(d)), uintptr(owner), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.Show, uintptr(unsafe.Pointer(d)), uintptr(owner))
 	return win.HRESULT(ret)
 }
 
 func (d *modernFileOpenDialog) getOptions(options *uint32) win.HRESULT {
-	ret, _, _ := syscall.Syscall(d.LpVtbl.GetOptions, 2, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(options)), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.GetOptions, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(options)))
 	return win.HRESULT(ret)
 }
 
 func (d *modernFileOpenDialog) setOptions(options uint32) win.HRESULT {
-	ret, _, _ := syscall.Syscall(d.LpVtbl.SetOptions, 2, uintptr(unsafe.Pointer(d)), uintptr(options), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.SetOptions, uintptr(unsafe.Pointer(d)), uintptr(options))
 	return win.HRESULT(ret)
 }
 
@@ -182,7 +182,7 @@ func (d *modernFileOpenDialog) setTitle(title string) error {
 	if err != nil {
 		return err
 	}
-	ret, _, _ := syscall.Syscall(d.LpVtbl.SetTitle, 2, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(titlePtr)), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.SetTitle, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(titlePtr)))
 	if hr := win.HRESULT(ret); win.FAILED(hr) {
 		return fmt.Errorf("folder picker title failed: HRESULT 0x%08x", uint32(hr))
 	}
@@ -194,7 +194,7 @@ func (d *modernFileOpenDialog) setOKButtonLabel(label string) error {
 	if err != nil {
 		return err
 	}
-	ret, _, _ := syscall.Syscall(d.LpVtbl.SetOkButtonLabel, 2, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(labelPtr)), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.SetOkButtonLabel, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(labelPtr)))
 	if hr := win.HRESULT(ret); win.FAILED(hr) {
 		return fmt.Errorf("folder picker button label failed: HRESULT 0x%08x", uint32(hr))
 	}
@@ -216,7 +216,7 @@ func (d *modernFileOpenDialog) setInitialFolder(path string) error {
 	}
 	defer item.release()
 
-	ret, _, _ := syscall.Syscall(d.LpVtbl.SetFolder, 2, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(item)), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.SetFolder, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(item)))
 	if hr := win.HRESULT(ret); win.FAILED(hr) {
 		return nil
 	}
@@ -225,7 +225,7 @@ func (d *modernFileOpenDialog) setInitialFolder(path string) error {
 
 func (d *modernFileOpenDialog) getResult() (*modernShellItem, win.HRESULT) {
 	var item *modernShellItem
-	ret, _, _ := syscall.Syscall(d.LpVtbl.GetResult, 2, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(&item)), 0)
+	ret, _, _ := syscall.SyscallN(d.LpVtbl.GetResult, uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(&item)))
 	return item, win.HRESULT(ret)
 }
 
@@ -253,12 +253,12 @@ func (s *modernShellItem) release() {
 	if s == nil || s.LpVtbl == nil {
 		return
 	}
-	_, _, _ = syscall.Syscall(s.LpVtbl.Release, 1, uintptr(unsafe.Pointer(s)), 0, 0)
+	_, _, _ = syscall.SyscallN(s.LpVtbl.Release, uintptr(unsafe.Pointer(s)))
 }
 
 func (s *modernShellItem) fileSystemPath() (string, error) {
 	var pathPtr *uint16
-	ret, _, _ := syscall.Syscall(s.LpVtbl.GetDisplayName, 3, uintptr(unsafe.Pointer(s)), sigdnFileSystemPath, uintptr(unsafe.Pointer(&pathPtr)))
+	ret, _, _ := syscall.SyscallN(s.LpVtbl.GetDisplayName, uintptr(unsafe.Pointer(s)), sigdnFileSystemPath, uintptr(unsafe.Pointer(&pathPtr)))
 	if hr := win.HRESULT(ret); win.FAILED(hr) || pathPtr == nil {
 		return "", fmt.Errorf("folder path lookup failed: HRESULT 0x%08x", uint32(hr))
 	}

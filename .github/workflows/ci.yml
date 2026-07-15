@@ -91,7 +91,8 @@ jobs:
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
       - name: Test
-        run: go test ./... -count=1 -coverprofile=coverage.out
+        shell: pwsh
+        run: go test ./... -count=1 "-coverprofile=coverage.out"
 
       - name: Test with race detector
         env:

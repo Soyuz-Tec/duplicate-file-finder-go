@@ -21,7 +21,7 @@ func trustedExplorerPath() (string, error) {
 		return "", fmt.Errorf("resolve Windows directory: %w", err)
 	}
 	if windowsDir == "" || !filepath.IsAbs(windowsDir) {
-		return "", errors.New("Windows returned an invalid installation directory")
+		return "", errors.New("the Windows installation directory is invalid")
 	}
 
 	explorer := filepath.Clean(filepath.Join(windowsDir, "explorer.exe"))
@@ -33,7 +33,7 @@ func trustedExplorerPath() (string, error) {
 		return "", fmt.Errorf("verify Windows Explorer: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", errors.New("Windows Explorer is not a regular file")
+		return "", errors.New("resolved Windows Explorer is not a regular file")
 	}
 	return explorer, nil
 }

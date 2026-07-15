@@ -42,19 +42,16 @@ func (f *shellItemImageFactory) release() {
 	if f == nil || f.LpVtbl == nil {
 		return
 	}
-	_, _, _ = syscall.Syscall(f.LpVtbl.Release, 1, uintptr(unsafe.Pointer(f)), 0, 0)
+	_, _, _ = syscall.SyscallN(f.LpVtbl.Release, uintptr(unsafe.Pointer(f)))
 }
 
 func (f *shellItemImageFactory) getImage(size win.SIZE, flags uint32, hbm *win.HBITMAP) win.HRESULT {
-	ret, _, _ := syscall.Syscall6(
+	ret, _, _ := syscall.SyscallN(
 		f.LpVtbl.GetImage,
-		4,
 		uintptr(unsafe.Pointer(f)),
 		uintptr(unsafe.Pointer(&size)),
 		uintptr(flags),
 		uintptr(unsafe.Pointer(hbm)),
-		0,
-		0,
 	)
 	return win.HRESULT(ret)
 }
@@ -77,7 +74,7 @@ func shellThumbnailNRGBAFromHeldRecordPath(path string, maxSize int) (*image.NRG
 	)
 	hr := win.HRESULT(hrRaw)
 	if win.FAILED(hr) || factory == nil {
-		return nil, fmt.Errorf("Windows Shell thumbnail provider unavailable: HRESULT 0x%08x", uint32(hr))
+		return nil, fmt.Errorf("the Windows Shell thumbnail provider is unavailable: HRESULT 0x%08x", uint32(hr))
 	}
 	defer factory.release()
 
@@ -85,7 +82,7 @@ func shellThumbnailNRGBAFromHeldRecordPath(path string, maxSize int) (*image.NRG
 	size := win.SIZE{CX: int32(maxSize), CY: int32(maxSize)}
 	hr = factory.getImage(size, siigbfResizeToFit, &hbm)
 	if win.FAILED(hr) || hbm == 0 {
-		return nil, fmt.Errorf("Windows Shell thumbnail rendering failed: HRESULT 0x%08x", uint32(hr))
+		return nil, fmt.Errorf("the Windows Shell thumbnail rendering failed: HRESULT 0x%08x", uint32(hr))
 	}
 	defer win.DeleteObject(win.HGDIOBJ(hbm))
 

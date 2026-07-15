@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	errRecycleAborted     = errors.New("Windows recycle operation was aborted")
+	errRecycleAborted     = errors.New("the Windows recycle operation was aborted")
 	errRecycleUnsupported = errors.New("recycle operation is unsupported on this platform")
 	errSourceStillExists  = errors.New("source path still exists after recycle operation")
 )

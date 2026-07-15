@@ -8,6 +8,7 @@ All notable TwinTidy changes will be documented here. The project uses [Semantic
 
 - Staticcheck, workflow linting, race-detector tests, and a total-coverage floor as CI quality gates.
 - Fuzz targets for directory protection, user-file classification, and category mapping, plus staged-scan throughput benchmarks.
+- Persisted interface preferences: the main window reopens at its last on-screen position and the folder picker starts from the previously scanned folder. Preferences live in `%LOCALAPPDATA%\TwinTidy\settings.json`, load fail-open, and are saved atomically.
 
 ### Changed
 

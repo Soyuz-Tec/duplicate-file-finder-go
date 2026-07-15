@@ -20,6 +20,7 @@ import (
 	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo"
 	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
 	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/settings"
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
@@ -111,6 +112,9 @@ type windowsApp struct {
 	currentPreviewDir string
 	allowedPreviewURL string
 	uiClosing         atomic.Bool
+
+	settings     settings.Settings
+	settingsPath string
 }
 
 type duplicateRow struct {
@@ -132,16 +136,20 @@ type duplicateTableModel struct {
 
 func Run() error {
 	diagnostics.Logf("gui initializing")
+	persisted, settingsPath := loadPersistedSettings()
 	ui := &windowsApp{
-		engine:    scanner.NewEngine(0),
-		model:     &duplicateTableModel{},
-		operation: newOperationState(),
+		engine:       scanner.NewEngine(0),
+		model:        &duplicateTableModel{},
+		operation:    newOperationState(),
+		settings:     persisted,
+		settingsPath: settingsPath,
 	}
 	ui.model.onSelectionChanged = ui.updateDeleteActionState
 	if err := ui.create(); err != nil {
 		diagnostics.Logf("gui create failed: error_type=%T", err)
 		return fmt.Errorf("create TwinTidy window: %w", err)
 	}
+	ui.applyPersistedWindowPlacement()
 	ui.startPreviewWorker()
 	defer ui.stopPreviewWorker()
 	ui.mw.Closing().Attach(ui.handleWindowClosing)
@@ -195,6 +203,7 @@ func (a *windowsApp) handleWindowClosing(canceled *bool, _ walk.CloseReason) {
 		diagnostics.Logf("window close deferred: generation=%d", generation)
 		return
 	}
+	a.persistSettings()
 	a.uiClosing.Store(true)
 }
 
@@ -525,12 +534,13 @@ func (a *windowsApp) selectFolder() {
 		return
 	}
 
-	path, accepted, err := showModernFolderDialog(a.mw, "Select folder to scan", a.operation.folder)
+	initialFolder := a.initialFolderForPicker()
+	path, accepted, err := showModernFolderDialog(a.mw, "Select folder to scan", initialFolder)
 	if err != nil {
 		diagnostics.Logf("modern folder picker failed; falling back to legacy picker: error_type=%T", err)
 		dlg := walk.FileDialog{
 			Title:          "Select folder to scan",
-			InitialDirPath: a.operation.folder,
+			InitialDirPath: initialFolder,
 		}
 		accepted, err = dlg.ShowBrowseFolder(a.mw)
 		if err != nil {
@@ -547,6 +557,7 @@ func (a *windowsApp) selectFolder() {
 		return
 	}
 
+	a.settings.LastFolder = a.operation.folder
 	a.surfaceReport = scanner.SurfaceReport{}
 	a.model.setRows(nil)
 	if a.table != nil {

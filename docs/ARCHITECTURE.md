@@ -54,6 +54,7 @@ TwinTidy is a modular desktop monolith.
 | Windows recycle adapter | `internal/scanner/recycle_windows.go` | fail-closed capability gate; future identity-bound native recycle | path-only destructive authority or duplicate selection policy |
 | Preview adapters | `internal/gui` Windows files | Shell thumbnails and constrained rich/text previews | destructive authority |
 | Diagnostics | `internal/diagnostics` | local session logs and privacy-limited crash reports | file contents or secrets |
+| Settings | `internal/settings` | persisted window placement and last-folder preferences; fail-open load, atomic save | scan results, file authority, or destructive intent |
 | Build information | target `internal/buildinfo` | semantic version, commit, source date | runtime update checks |
 
 Boundary direction is UI -> application policy -> scanner/deletion abstractions -> Windows/filesystem adapters. Native adapter types must not leak into policy tests.

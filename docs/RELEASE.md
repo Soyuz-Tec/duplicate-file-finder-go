@@ -169,7 +169,7 @@ signtool verify /pa /all /v .\dist\TwinTidy.exe
 signtool verify /pa /all /v .\dist\TwinTidy.msix
 ```
 
-`sign-release.ps1` invokes the reviewed provider adapter without passing credentials on the command line, requires the exact configured signer subject and certificate SHA-256, requires a timestamp certificate, preserves the unsigned receipt, and emits `TwinTidy.signed-provenance.json`. `package-signed.ps1` creates the final portable archive only from those digest-pinned inputs. `package-msix.ps1` creates an unsigned package from the already signed executable; the protected job signs and re-verifies the MSIX before publication. See [the signing adapter contract](SIGNING_ADAPTER.md) and [ADR 0006](adr/0006-per-user-msix-distribution.md).
+`sign-release.ps1` invokes the reviewed provider adapter without passing credentials on the command line, requires the exact configured signer subject and certificate SHA-256, requires a timestamp certificate, preserves the unsigned receipt, and emits `TwinTidy.signed-provenance.json`. `package-signed.ps1` creates the final portable archive only from those digest-pinned inputs. `package-msix.ps1` creates an unsigned package from the already signed executable; the protected job signs and re-verifies the MSIX before publication. See [the signing adapter contract](SIGNING_ADAPTER.md), the [code signing policy](CODE_SIGNING_POLICY.md), and [ADR 0006](adr/0006-per-user-msix-distribution.md).
 
 The final `SHA256SUMS.txt` uses SHA-256 and lists every downloadable artifact plus `TwinTidy.release-manifest.json`. Release notes identify the supported architectures, exact certificate identity, safety-impacting changes, known limitations, upgrade behavior, and rollback procedure.
 

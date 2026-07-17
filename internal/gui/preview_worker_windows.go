@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
 
 	"github.com/lxn/walk"
 	"github.com/lxn/win"

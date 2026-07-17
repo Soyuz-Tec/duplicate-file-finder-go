@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
+	"github.com/Soyuz-Tec/twintidy/internal/diagnostics"
 
 	"github.com/cespare/xxhash/v2"
 )

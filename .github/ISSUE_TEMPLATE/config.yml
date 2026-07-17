@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Private security report
-    url: https://github.com/Soyuz-Tec/duplicate-file-finder-go/security/advisories/new
+    url: https://github.com/Soyuz-Tec/twintidy/security/advisories/new
     about: Report vulnerabilities or possible data-loss exploits privately.

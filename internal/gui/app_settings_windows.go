@@ -8,8 +8,8 @@ import (
 	"github.com/lxn/walk"
 	"github.com/lxn/win"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/settings"
+	"github.com/Soyuz-Tec/twintidy/internal/diagnostics"
+	"github.com/Soyuz-Tec/twintidy/internal/settings"
 )
 
 // loadPersistedSettings resolves and reads the preference file. Failures are

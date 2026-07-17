@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
 )
 
 // Schema identifies the JSON document layout.

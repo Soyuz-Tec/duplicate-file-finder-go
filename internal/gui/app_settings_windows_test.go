@@ -5,7 +5,7 @@ package gui
 import (
 	"testing"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/settings"
+	"github.com/Soyuz-Tec/twintidy/internal/settings"
 )
 
 func TestPlacementIntersectsVirtualScreen(t *testing.T) {

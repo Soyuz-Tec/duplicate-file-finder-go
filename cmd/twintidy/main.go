@@ -5,10 +5,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/gui"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/startup"
+	"github.com/Soyuz-Tec/twintidy/internal/buildinfo"
+	"github.com/Soyuz-Tec/twintidy/internal/diagnostics"
+	"github.com/Soyuz-Tec/twintidy/internal/gui"
+	"github.com/Soyuz-Tec/twintidy/internal/startup"
 )
 
 var (

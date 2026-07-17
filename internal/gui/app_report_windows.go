@@ -15,9 +15,9 @@ import (
 	"github.com/lxn/walk"
 	"github.com/lxn/win"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/report"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/diagnostics"
+	"github.com/Soyuz-Tec/twintidy/internal/report"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
 )
 
 // duplicateGroupsFromRows rebuilds the verified duplicate groups from the

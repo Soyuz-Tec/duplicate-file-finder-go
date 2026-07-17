@@ -85,8 +85,8 @@ Requirements:
 Run the quality gates:
 
 ```powershell
-git clone https://github.com/Soyuz-Tec/duplicate-file-finder-go.git
-Set-Location duplicate-file-finder-go
+git clone https://github.com/Soyuz-Tec/twintidy.git
+Set-Location twintidy
 $env:CGO_ENABLED = "0"
 go mod verify
 go vet ./...
@@ -127,7 +127,7 @@ Direct development builds remain available from a dirty working tree and are lab
 
 TwinTidy is being hardened toward its first reviewed release. The current pre-release build supports scanning, exact-match verification, selection planning, and previews; cleanup is disabled and no stable release may enable it without the identity-safety evidence required by ADR 0005.
 
-Security or possible data-loss reports should be submitted through [GitHub private vulnerability reporting](https://github.com/Soyuz-Tec/duplicate-file-finder-go/security/advisories/new), not a public issue.
+Security or possible data-loss reports should be submitted through [GitHub private vulnerability reporting](https://github.com/Soyuz-Tec/twintidy/security/advisories/new), not a public issue.
 
 ## License
 

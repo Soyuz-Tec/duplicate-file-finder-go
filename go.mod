@@ -1,4 +1,4 @@
-module github.com/Soyuz-Tec/duplicate-file-finder-go
+module github.com/Soyuz-Tec/twintidy
 
 go 1.26.5
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo"
+	"github.com/Soyuz-Tec/twintidy/internal/buildinfo"
 )
 
 func TestRunVersion(t *testing.T) {

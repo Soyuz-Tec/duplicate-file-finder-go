@@ -46,4 +46,4 @@ Start with a regression test. Exercise replacement, same-size mutation, timestam
 
 Pull requests must explain the safety impact, exact verification commands, architecture impact, risk, and rollback using the repository template.
 
-Security and possible data-loss findings belong in [private vulnerability reporting](https://github.com/Soyuz-Tec/duplicate-file-finder-go/security/advisories/new).
+Security and possible data-loss findings belong in [private vulnerability reporting](https://github.com/Soyuz-Tec/twintidy/security/advisories/new).

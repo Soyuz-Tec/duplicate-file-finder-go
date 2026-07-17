@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/diagnostics"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/settings"
+	"github.com/Soyuz-Tec/twintidy/internal/buildinfo"
+	"github.com/Soyuz-Tec/twintidy/internal/diagnostics"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/settings"
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
 )
 
 func TestSnapshotPreviewRowsIsImmutableFromSourceMutation(t *testing.T) {

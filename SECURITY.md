@@ -4,7 +4,7 @@ TwinTidy performs destructive filesystem operations, so possible data-loss behav
 
 ## Reporting privately
 
-Use [GitHub private vulnerability reporting](https://github.com/Soyuz-Tec/duplicate-file-finder-go/security/advisories/new) for:
+Use [GitHub private vulnerability reporting](https://github.com/Soyuz-Tec/twintidy/security/advisories/new) for:
 
 - recycling a file that was not explicitly checked
 - recycling every physical copy in a duplicate group

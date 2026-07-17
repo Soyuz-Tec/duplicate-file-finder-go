@@ -204,9 +204,9 @@ try {
                         "-H=windowsgui"
                         "-s"
                         "-w"
-                        "-X github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo.Version=$($versionInfo.Canonical)"
-                        "-X github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo.Commit=$runtimeCommit"
-                        "-X github.com/Soyuz-Tec/duplicate-file-finder-go/internal/buildinfo.SourceDate=$SourceDate"
+                        "-X github.com/Soyuz-Tec/twintidy/internal/buildinfo.Version=$($versionInfo.Canonical)"
+                        "-X github.com/Soyuz-Tec/twintidy/internal/buildinfo.Commit=$runtimeCommit"
+                        "-X github.com/Soyuz-Tec/twintidy/internal/buildinfo.SourceDate=$SourceDate"
                     ) -join " "
 
                     & go build -mod=readonly -trimpath -buildvcs=false -ldflags $ldflags -o $executablePath ./cmd/twintidy

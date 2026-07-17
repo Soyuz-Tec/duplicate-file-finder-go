@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Soyuz-Tec/duplicate-file-finder-go/internal/scanner"
+	"github.com/Soyuz-Tec/twintidy/internal/scanner"
 )
 
 func sampleGroups() []scanner.DuplicateGroup {
